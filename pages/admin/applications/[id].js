@@ -8,7 +8,6 @@ import { Loader2, AlertTriangle, ArrowLeft, User, Home, Phone, Mail, Briefcase, 
 import { getIronSession } from 'iron-session';
 import { sessionOptions } from '../../../lib/session'; // Ajuste o caminho se necessário
 import prisma from '../../../lib/prisma'; // Ajuste o caminho se necessário
-import Decimal from 'decimal.js'; // Importar Decimal se precisar de manipulação extra, senão toString() basta
 
 // --- Helpers (mantidos ou movidos para utils) ---
 const formatCurrency = (value) => {
