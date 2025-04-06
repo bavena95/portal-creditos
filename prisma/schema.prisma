@@ -1,0 +1,80 @@
+// prisma/schema.prisma
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --- Modelos de Dados ---
+
+// Modelo para armazenar as ofertas de crédito judicial
+model Offer {
+  id          String   @id @default(cuid())
+  caseNumber  String   @unique
+  name        String
+  offerAmount Decimal  @db.Decimal(12, 2)
+  status      String   @default("available")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  applications Application[]
+
+  @@map("offers")
+}
+
+// Modelo para armazenar as aplicações submetidas pelos usuários
+model Application {
+  id            String   @id @default(cuid())
+  offerId       String
+  offer         Offer    @relation(fields: [offerId], references: [id])
+  fullName      String
+  address       String
+  phone         String
+  email         String
+  profession    String
+  maritalStatus String
+  bank          String
+  agency        String
+  accountNumber String
+  accountType   String
+  status        String   @default("pending_analysis")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  uploadedFiles UploadedFile[]
+
+  @@map("applications")
+}
+
+// Modelo para armazenar informações sobre os arquivos enviados para o R2
+model UploadedFile {
+  id             String      @id @default(cuid())
+  applicationId  String
+  application    Application @relation(fields: [applicationId], references: [id])
+  fieldName      String
+  r2Key          String      @unique
+  originalFilename String?
+  mimetype       String?
+  size           Int?
+  createdAt      DateTime    @default(now())
+
+  @@map("uploaded_files")
+}
+
+// --- NOVO MODELO ---
+// Modelo para armazenar os utilizadores administrativos
+model AdminUser {
+  id           String   @id @default(cuid()) // Chave primária única
+  email        String   @unique // Email para login, deve ser único
+  passwordHash String   // !! IMPORTANTE: Guardar SEMPRE o HASH da senha, nunca a senha original !!
+  name         String?  // Nome do administrador (opcional)
+  createdAt    DateTime @default(now()) // Data de criação
+  updatedAt    DateTime @updatedAt // Data da última atualização
+
+  @@map("admin_users") // Mapeia para a tabela "admin_users" no banco de dados
+}
+
