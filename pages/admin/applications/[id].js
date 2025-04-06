@@ -1,122 +1,76 @@
 // pages/admin/applications/[id].js
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router'; // Para pegar o ID da URL
+import React, { useState, useCallback } from 'react';
+// Removido useRouter e useEffect daqui, pois os dados virão do servidor
 import Head from 'next/head';
 import Link from 'next/link';
-import { Loader2, AlertTriangle, ArrowLeft, User, Home, Phone, Mail, Briefcase, Info, Landmark, CreditCard, FileText, Download, CheckCircle, XCircle, FileUp } from 'lucide-react'; // Ícones (FileUp adicionado)
+import { Loader2, AlertTriangle, ArrowLeft, User, Home, Phone, Mail, Briefcase, Info, Landmark, CreditCard, FileText, Download, CheckCircle, XCircle, FileUp } from 'lucide-react';
+// Importações necessárias para getServerSideProps
+import { getIronSession } from 'iron-session';
+import { sessionOptions } from '../../../lib/session'; // Ajuste o caminho se necessário
+import prisma from '../../../lib/prisma'; // Ajuste o caminho se necessário
+import Decimal from 'decimal.js'; // Importar Decimal se precisar de manipulação extra, senão toString() basta
 
-// Helper para formatar moeda (pode mover para um arquivo utils)
+// --- Helpers (mantidos ou movidos para utils) ---
 const formatCurrency = (value) => {
-  const number = parseFloat(value); // Converte string (do Decimal) para número
-  if (typeof number !== 'number' || isNaN(number)) return 'R$ -';
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number);
+    const number = typeof value === 'string' ? parseFloat(value) : value;
+    if (typeof number !== 'number' || isNaN(number)) return 'R$ -';
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number);
 };
-
-// Helper para formatar data (pode mover para um arquivo utils)
-const formatDate = (dateString) => {
-  if (!dateString) return '-';
-  return new Date(dateString).toLocaleDateString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
+const formatDate = (dateString) => { // Recebe string ISO do servidor
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (!isNaN(date)) {
+        return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    return '-';
 };
-
-// Helper para formatar tamanho de arquivo (pode mover para um arquivo utils)
 const formatFileSize = (bytes) => {
-    if (bytes === 0 || !bytes) return '0 Bytes';
+    if (bytes === 0 || !bytes || typeof bytes !== 'number') return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Componente da página de detalhes
-export default function ApplicationDetailsPage() {
-  const router = useRouter();
-  const { id: applicationId } = router.query; // Pega o ID da aplicação da URL
+// --- Componente da Página ---
+// Recebe 'application' e 'adminUser' como props
+export default function ApplicationDetailsPage({ application, adminUser, error }) {
+  // Estados locais apenas para interações da UI (download)
+  const [downloadingFileId, setDownloadingFileId] = useState(null);
+  const [downloadError, setDownloadError] = useState(null);
 
-  // --- Estados do Componente ---
-  const [application, setApplication] = useState(null); // Guarda os detalhes da aplicação
-  const [isLoading, setIsLoading] = useState(true); // Loading da página
-  const [error, setError] = useState(null); // Erro ao carregar detalhes
-  const [downloadingFileId, setDownloadingFileId] = useState(null); // ID do arquivo sendo baixado
-  const [downloadError, setDownloadError] = useState(null); // Erro no download
-
-  // --- Efeito para Buscar Detalhes da Aplicação ---
-  useEffect(() => {
-    // Só busca se o applicationId estiver disponível na URL
-    if (applicationId) {
-      const fetchDetails = async () => {
-        setIsLoading(true);
-        setError(null);
-        setDownloadError(null);
-        try {
-          const response = await fetch(`/api/admin/applications/${applicationId}`);
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || `Erro ${response.status}`);
-          }
-          const data = await response.json();
-          setApplication(data);
-        } catch (err) {
-          console.error("Erro ao buscar detalhes da aplicação:", err);
-          setError(err.message);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      fetchDetails();
-    }
-  }, [applicationId]); // Executa sempre que o applicationId mudar
-
-  // --- Função para Lidar com Download ---
-  const handleDownload = async (fileId, filename) => {
+  // Função para Lidar com Download (continua igual)
+  const handleDownload = useCallback(async (fileId, filename) => {
     setDownloadingFileId(fileId);
     setDownloadError(null);
-    console.log(`Tentando baixar arquivo ID: ${fileId}`);
     try {
       const response = await fetch(`/api/admin/files/${fileId}/download`);
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || `Erro ${response.status}`);
-      }
-
-      if (data.downloadUrl) {
-        console.log(`URL recebida: ${data.downloadUrl}`);
-        // Abre o link em nova aba (mais seguro que window.location.href)
-        // O 'attachment; filename="..."' na API deve sugerir o nome correto
-        window.open(data.downloadUrl, '_blank');
-      } else {
-        throw new Error("URL de download não recebida da API.");
-      }
+      if (!response.ok) { throw new Error(data.message || `Erro ${response.status}`); }
+      if (data.downloadUrl) { window.open(data.downloadUrl, '_blank'); }
+      else { throw new Error("URL de download não recebida da API."); }
     } catch (err) {
       console.error(`Erro ao baixar arquivo ${fileId}:`, err);
       setDownloadError(`Erro ao obter link para ${filename || fileId}: ${err.message}`);
     } finally {
-      setDownloadingFileId(null); // Limpa o estado de loading do download
+      setDownloadingFileId(null);
     }
-  };
+  }, []);
 
 
   // --- Renderização ---
 
-  // Estado de Carregamento Inicial
-  if (isLoading) {
-    return ( <div className="flex items-center justify-center min-h-screen"><Loader2 className="w-10 h-10 animate-spin text-indigo-600" /></div> );
-  }
+  // Trata erro vindo do getServerSideProps
+   if (error) {
+     return ( <div className="flex flex-col items-center justify-center min-h-screen text-red-600 p-4"> <AlertTriangle className="w-12 h-12 mb-4" /> <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Aplicação</h2> <p className="text-center mb-4">{error}</p> <Link href="/admin/dashboard" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"> Voltar ao Dashboard </Link> </div> );
+   }
 
-  // Estado de Erro no Carregamento
-  if (error) {
-    return ( <div className="flex flex-col items-center justify-center min-h-screen text-red-600 p-4"> <AlertTriangle className="w-12 h-12 mb-4" /> <h2 className="text-xl font-semibold mb-2">Erro ao Carregar Aplicação</h2> <p className="text-center mb-4">{error}</p> <Link href="/admin/dashboard" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"> Voltar ao Dashboard </Link> </div> );
-  }
-
-  // Aplicação não encontrada (após carregamento sem erro)
+  // Caso notFound: true tenha sido retornado por getServerSideProps (ou application seja null por outra razão)
   if (!application) {
      return ( <div className="flex flex-col items-center justify-center min-h-screen text-gray-600 p-4"> <AlertTriangle className="w-12 h-12 mb-4" /> <h2 className="text-xl font-semibold mb-2">Aplicação Não Encontrada</h2> <Link href="/admin/dashboard" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"> Voltar ao Dashboard </Link> </div> );
   }
 
-  // --- Renderização dos Detalhes ---
+  // Renderização dos Detalhes (usa a prop 'application')
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-8">
       <Head>
@@ -132,10 +86,9 @@ export default function ApplicationDetailsPage() {
             <h1 className="text-3xl font-bold text-gray-800">Detalhes da Aplicação</h1>
             <p className="text-sm text-gray-500">ID: {application.id}</p>
         </div>
-         {/* ALERTA DE SEGURANÇA */}
-         <div className="mt-4 p-2 bg-yellow-100 border border-yellow-300 text-yellow-800 rounded-md text-xs max-w-xs text-right">
-           <AlertTriangle className="inline w-4 h-4 mr-1" />
-           Página desprotegida!
+         {/* Mensagem de boas-vindas com email do admin */}
+         <div className="text-sm text-gray-600">
+             Logado como: {adminUser?.email || 'Admin'}
          </div>
       </header>
 
@@ -177,11 +130,10 @@ export default function ApplicationDetailsPage() {
             {application.offer ? (
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <div><dt className="font-medium text-gray-500">Nº Processo</dt><dd className="text-gray-900">{application.offer.caseNumber}</dd></div>
+                {/* Usar helper formatCurrency */}
                 <div><dt className="font-medium text-gray-500">Valor Original da Oferta</dt><dd className="text-gray-900 font-semibold">{formatCurrency(application.offer.offerAmount)}</dd></div>
                 </dl>
-            ) : (
-                <p className="text-sm text-gray-500">Informações da oferta não disponíveis.</p>
-            )}
+            ) : ( <p className="text-sm text-gray-500">Informações da oferta não disponíveis.</p> )}
           </section>
         </div>
 
@@ -191,17 +143,10 @@ export default function ApplicationDetailsPage() {
            <section className="bg-white p-6 rounded-lg shadow">
              <h2 className="text-xl font-semibold text-gray-700 mb-4">Status e Informações</h2>
              <dl className="space-y-2 text-sm">
-               <div>
-                 <dt className="font-medium text-gray-500">Status Atual</dt>
-                 <dd className="mt-1">
-                    <span className={`px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full ${ application.status === 'pending_analysis' ? 'bg-yellow-100 text-yellow-800' : application.status === 'approved' ? 'bg-green-100 text-green-800' : application.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800' }`}>
-                        {application.status.replace('_', ' ')}
-                    </span>
-                 </dd>
-               </div>
+               <div> <dt className="font-medium text-gray-500">Status Atual</dt> <dd className="mt-1"> <span className={`px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full ${ application.status === 'pending_analysis' ? 'bg-yellow-100 text-yellow-800' : application.status === 'approved' ? 'bg-green-100 text-green-800' : application.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800' }`}> {application.status.replace('_', ' ')} </span> </dd> </div>
+               {/* Usar helper formatDate */}
                 <div><dt className="font-medium text-gray-500">Data de Submissão</dt><dd className="text-gray-900">{formatDate(application.createdAt)}</dd></div>
                 <div><dt className="font-medium text-gray-500">Última Atualização</dt><dd className="text-gray-900">{formatDate(application.updatedAt)}</dd></div>
-                {/* TODO: Adicionar botões de Ação (Aprovar/Rejeitar) aqui também? */}
              </dl>
            </section>
 
@@ -212,33 +157,96 @@ export default function ApplicationDetailsPage() {
               <ul className="space-y-3">
                 {application.uploadedFiles.map((file) => (
                   <li key={file.id} className="flex items-center justify-between border-b border-gray-100 pb-2 last:border-b-0">
-                    <div className="text-sm">
-                      <p className="font-medium text-gray-800">{file.fieldName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</p> {/* Formata fieldName */}
-                      <p className="text-xs text-gray-500 truncate max-w-xs" title={file.originalFilename}>{file.originalFilename || 'Nome não disponível'}</p>
+                    <div className="text-sm overflow-hidden mr-2"> {/* Adicionado overflow-hidden e mr-2 */}
+                      <p className="font-medium text-gray-800 whitespace-nowrap">{file.fieldName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</p>
+                      <p className="text-xs text-gray-500 truncate" title={file.originalFilename}>{file.originalFilename || 'Nome não disponível'}</p>
+                      {/* Usar helper formatFileSize */}
                       <p className="text-xs text-gray-400">{formatFileSize(file.size)} - {file.mimetype}</p>
                     </div>
-                    <button
-                      onClick={() => handleDownload(file.id, file.originalFilename)}
-                      disabled={downloadingFileId === file.id}
-                      className="p-1.5 rounded text-indigo-600 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-wait"
-                      title={`Baixar ${file.originalFilename || 'arquivo'}`}
-                    >
-                      {downloadingFileId === file.id ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Download className="w-5 h-5" />
-                      )}
+                    <button onClick={() => handleDownload(file.id, file.originalFilename)} disabled={downloadingFileId === file.id} className="p-1.5 rounded text-indigo-600 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-wait flex-shrink-0" title={`Baixar ${file.originalFilename || 'arquivo'}`}> {/* Adicionado flex-shrink-0 */}
+                      {downloadingFileId === file.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
                     </button>
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="text-sm text-gray-500">Nenhum arquivo encontrado para esta aplicação.</p>
-            )}
+            ) : ( <p className="text-sm text-gray-500">Nenhum arquivo encontrado para esta aplicação.</p> )}
           </section>
         </div>
 
       </div>
     </div>
   );
+}
+
+
+// --- Função getServerSideProps ---
+// Roda no servidor ANTES da página ser renderizada
+export async function getServerSideProps(context) {
+  // Obtém a sessão a partir da requisição (req) e resposta (res)
+  const session = await getIronSession(context.req, context.res, sessionOptions);
+
+  // 1. Verifica se existe um utilizador admin na sessão
+  if (!session.adminUser || !session.adminUser.id) {
+    console.log(`[getServerSideProps /admin/applications/${context.params?.id}] Sessão admin inválida. Redirecionando para login.`);
+    return { redirect: { destination: '/admin/login', permanent: false } };
+  }
+
+  // Se a sessão for válida, busca os dados da aplicação no servidor
+  const { id: applicationId } = context.params; // Pega o ID da URL
+  console.log(`[getServerSideProps /admin/applications/${applicationId}] Sessão válida. Buscando aplicação...`);
+
+  try {
+    const applicationData = await prisma.application.findUnique({
+        where: { id: applicationId },
+        include: {
+          offer: { select: { caseNumber: true, offerAmount: true } },
+          uploadedFiles: {
+            select: { id: true, fieldName: true, r2Key: true, originalFilename: true, mimetype: true, size: true, createdAt: true },
+            orderBy: { fieldName: 'asc' }
+          }
+        }
+      });
+
+    // Se a aplicação não for encontrada no DB
+    if (!applicationData) {
+        console.warn(`[getServerSideProps /admin/applications/${applicationId}] Aplicação não encontrada no DB.`);
+        return { notFound: true }; // Retorna página 404
+    }
+
+     // 3. Prepara/Serializa os dados para serem passados como props
+     const application = {
+        ...applicationData,
+        createdAt: applicationData.createdAt.toISOString(),
+        updatedAt: applicationData.updatedAt.toISOString(),
+        offer: applicationData.offer ? {
+            ...applicationData.offer,
+            offerAmount: applicationData.offer.offerAmount?.toString(), // Decimal para string
+        } : null,
+        uploadedFiles: applicationData.uploadedFiles.map(file => ({
+            ...file,
+            createdAt: file.createdAt.toISOString(), // Date para string
+            // size já é Int?, não precisa converter
+        })),
+    };
+
+    console.log(`[getServerSideProps /admin/applications/${applicationId}] Aplicação encontrada e serializada.`);
+
+    // Retorna os dados como props
+    return {
+      props: {
+        application, // Passa os detalhes da aplicação serializados
+        adminUser: session.adminUser, // Passa os dados do utilizador logado
+      },
+    };
+  } catch (error) {
+      console.error(`[getServerSideProps /admin/applications/${applicationId}] Erro ao buscar aplicação:`, error);
+      // Retorna um erro para o componente tratar
+      return {
+          props: {
+              application: null, // Indica que não carregou
+              adminUser: session.adminUser,
+              error: "Erro ao carregar dados da aplicação."
+          }
+      }
+  }
 }
